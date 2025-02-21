@@ -8,24 +8,27 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+
 	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	azureclient "github.com/gardener/gardener-extension-provider-azure/pkg/azure/client"
 	"github.com/gardener/gardener/extensions/pkg/controller/backupbucket"
 	"github.com/gardener/gardener/extensions/pkg/util"
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
-
-	"github.com/go-logr/logr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
+
+// DefaultAzureClientFactoryFunc is the default function for creating a DNS client. It can be overridden for tests.
+var DefaultAzureClientFactoryFunc = azureclient.NewAzureClientFactoryFromSecret
 
 type actuator struct {
 	backupbucket.Actuator
 	client client.Client
 }
 
-func newActuator(mgr manager.Manager) backupbucket.Actuator {
+func NewActuator(mgr manager.Manager) backupbucket.Actuator {
 	return &actuator{
 		client: mgr.GetClient(),
 	}
@@ -43,7 +46,7 @@ func (a *actuator) Reconcile(ctx context.Context, logger logr.Logger, backupBuck
 		return err
 	}
 
-	factory, err := azureclient.NewAzureClientFactoryFromSecret(
+	factory, err := DefaultAzureClientFactoryFunc(
 		ctx,
 		a.client,
 		backupBucket.Spec.SecretRef,
@@ -56,7 +59,7 @@ func (a *actuator) Reconcile(ctx context.Context, logger logr.Logger, backupBuck
 
 	var (
 		resourceGroupName  = backupBucket.Name // current implementation uses the same name for resourceGroup and backupBucket
-		storageAccountName = getStorageAccountName(backupBucket.Name)
+		storageAccountName = GenerateStorageAccountName(backupBucket.Name)
 	)
 	// If the generated secret in the backupbucket status does not exist
 	// it means no backupbucket exists and it needs to be created.
@@ -221,7 +224,7 @@ func (a *actuator) delete(ctx context.Context, _ logr.Logger, backupBucket *exte
 		return err
 	}
 
-	factory, err := azureclient.NewAzureClientFactoryFromSecret(
+	factory, err := DefaultAzureClientFactoryFunc(
 		ctx,
 		a.client,
 		backupBucket.Spec.SecretRef,
@@ -238,7 +241,7 @@ func (a *actuator) delete(ctx context.Context, _ logr.Logger, backupBucket *exte
 		if err != nil {
 			return err
 		}
-		storageAccountName := getStorageAccountName(backupBucket.Name)
+		storageAccountName := GenerateStorageAccountName(backupBucket.Name)
 		// resourceGroupName and backupBucketName are identical
 		if err := blobContainersClient.DeleteContainer(ctx, backupBucket.Name, storageAccountName, backupBucket.Name); err != nil {
 			return err
